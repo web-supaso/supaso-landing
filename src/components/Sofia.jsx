@@ -59,47 +59,59 @@ function speak(rawText, onEnd) {
 
     const trySpeak = () => {
         const voices = window.speechSynthesis.getVoices();
+        let chosen = null;
 
-        // 1. Voz femenina explícita en cualquier español latinoamericano
-        let chosen = voices.find(
-            (v) => LATAM_LANGS.includes(v.lang) && FEMALE_PATTERN.test(v.name)
-        );
+        // 1. Nombres explícitos de voces femeninas dulces latinas o preferidas
+        const PREFERRED_NAMES = [
+            "google español de estados", // Google Español de EEUU (femenina, natural, latino)
+            "sabina",                    // Microsoft Sabina (es-MX)
+            "paulina",                   // Paulina (es-MX / Apple)
+            "luciana",                   // Luciana
+            "google español",            // Google Español (femenina por defecto en Chrome)
+            "mónica", "monica",          // Mónica (es-ES / Apple)
+            "helena",                    // Microsoft Helena (es-ES) 
+        ];
 
-        // 2. Cualquier voz de español argentino (suele ser femenina "Paulina")
-        if (!chosen) chosen = voices.find((v) => v.lang === "es-AR");
+        for (const name of PREFERRED_NAMES) {
+            chosen = voices.find(v => v.name.toLowerCase().includes(name));
+            if (chosen) break;
+        }
 
-        // 3. Voz femenina en es-US (Microsoft / Google Español US)
-        if (!chosen)
+        // 2. Si no encontró ninguna de las explícitas, buscar usando patrones rigurosos excluyendo masculinas
+        if (!chosen) {
+            const MALE_NAMES = /male|man|masculino|tomas|tomás|raul|raúl|pablo|jorge|diego|carlos/i;
+            const FEMALE_PATTERN = /female|woman|femenin|paulina|mónica|monica|luciana|valentina|camila|sofía|sofia|maria|renata|conchita|helena|sabina/i;
+            const LATAM_LANGS = ["es-AR", "es-US", "es-MX", "es-CO", "es-CL", "es-419"];
+
+            // 2a. Mujer latina explícita
             chosen = voices.find(
-                (v) => v.lang === "es-US" && FEMALE_PATTERN.test(v.name)
+                (v) => LATAM_LANGS.includes(v.lang) && FEMALE_PATTERN.test(v.name) && !MALE_NAMES.test(v.name)
             );
 
-        // 4. Cualquier es-US
-        if (!chosen) chosen = voices.find((v) => v.lang === "es-US");
+            // 2b. Cualquier mujer en español
+            if (!chosen) {
+                chosen = voices.find(
+                    (v) => v.lang.startsWith("es") && FEMALE_PATTERN.test(v.name) && !MALE_NAMES.test(v.name)
+                );
+            }
 
-        // 5. Voz femenina en es-MX
-        if (!chosen)
-            chosen = voices.find(
-                (v) => v.lang === "es-MX" && FEMALE_PATTERN.test(v.name)
-            );
+            // 2c. Algún latinoamericano que no tenga nombre de varón explícito
+            if (!chosen) {
+                chosen = voices.find(
+                    (v) => LATAM_LANGS.includes(v.lang) && !MALE_NAMES.test(v.name)
+                );
+            }
 
-        // 6. Cualquier es-MX
-        if (!chosen) chosen = voices.find((v) => v.lang === "es-MX");
+            // 2d. Algún español que no sea varón
+            if (!chosen) {
+                chosen = voices.find((v) => v.lang.startsWith("es") && !MALE_NAMES.test(v.name));
+            }
 
-        // 7. Cualquier español latinoamericano (excluye es-ES)
-        if (!chosen)
-            chosen = voices.find(
-                (v) => v.lang.startsWith("es") && v.lang !== "es-ES" && v.lang !== "es-ES-x-eu"
-            );
-
-        // 8. Último recurso: cualquier español (incluso es-ES), pero femenina
-        if (!chosen)
-            chosen = voices.find(
-                (v) => v.lang.startsWith("es") && FEMALE_PATTERN.test(v.name)
-            );
-
-        // 9. Último absoluto: cualquier español
-        if (!chosen) chosen = voices.find((v) => v.lang.startsWith("es"));
+            // 2e. Último absoluto: cualquier español
+            if (!chosen) {
+                chosen = voices.find((v) => v.lang.startsWith("es"));
+            }
+        }
 
         if (chosen) {
             utter.voice = chosen;
