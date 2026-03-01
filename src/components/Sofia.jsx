@@ -151,7 +151,13 @@ function useSpeechRecognition({ onResult, onError }) {
         rec.onend = () => setIsListening(false);
         rec.onerror = (e) => {
             setIsListening(false);
-            if (e.error !== "no-speech") onError?.("Error de micrófono: " + e.error);
+            if (e.error === "network") {
+                onError?.("Error de red con el servicio de voz. (Chrome/Edge recomendados)");
+            } else if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+                onError?.("Por favor, permite el acceso al micrófono en tu navegador.");
+            } else if (e.error !== "no-speech") {
+                onError?.("Error de micrófono: " + e.error);
+            }
         };
         rec.onresult = (e) => {
             const transcript = e.results[0][0].transcript;
