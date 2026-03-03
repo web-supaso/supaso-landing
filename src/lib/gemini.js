@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY_SOFIA_V2;
 
 const SYSTEM_INSTRUCTION = `Eres S.O.F.I.A., el Sistema Orientador de Formación e Información al Afiliado. Eres la asistente virtual oficial del Sindicato Único de Profesionales de Ambiente y Seguridad Ocupacional (SUPASO) de Argentina.
 Eres una mujer locutora en tono institucional, formal pero siempre "tuteas" al usuario (hablas de "vos" o "te").
