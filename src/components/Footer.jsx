@@ -74,14 +74,17 @@ export default function Footer() {
                                 { label: "¿Qué es SUPASO?", href: "#manifiesto" },
                                 { label: "Marco Legal", href: "#features" },
                                 { label: "Credencial Activa", href: "#features" },
-                                { label: "Red de Beneficios", href: "#features" },
+                                { label: "Intranet", href: "https://app-supaso.vercel.app/admin.html", ext: true },
                             ].map((l) => (
                                 <li key={l.label}>
                                     <a
                                         href={l.href}
-                                        className="text-white/40 text-sm hover:text-white transition-colors"
+                                        target={l.ext ? "_blank" : undefined}
+                                        rel={l.ext ? "noopener noreferrer" : undefined}
+                                        className="text-white/40 text-sm hover:text-white transition-colors flex items-center gap-1"
                                     >
                                         {l.label}
+                                        {l.ext && <ExternalLink size={10} className="opacity-50" />}
                                     </a>
                                 </li>
                             ))}
@@ -96,7 +99,7 @@ export default function Footer() {
                         <ul className="space-y-3">
                             {[
                                 { label: "Portal de Afiliados", href: "https://app-supaso.vercel.app", ext: true },
-                                { label: "Iniciar trámite", href: "#sofia" },
+                                { label: "Afiliarme", href: "https://app-supaso.vercel.app/#afiliados", ext: true },
                                 { label: "Actualizar datos", href: "https://app-supaso.vercel.app", ext: true },
                                 { label: "Contacto y soporte", href: "mailto:soporte@supaso.org", ext: true },
                             ].map((l) => (
@@ -121,7 +124,7 @@ export default function Footer() {
                     <div className="flex items-center gap-2 text-white/20 text-xs">
                         <Shield size={12} />
                         <span>
-                            © {year} SUPASO · Todos los derechos reservados · Registro Sindical N° — CGTRA
+                            © {year} SUPASO ·v2.0 Todos los derechos reservados · Registro Sindical -MTESS N° 3156
                         </span>
                     </div>
                     <div className="flex items-center gap-4">

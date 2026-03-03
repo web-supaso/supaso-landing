@@ -125,12 +125,14 @@ export default function Proceso() {
                 {/* Main CTA */}
                 <div className="mt-16 text-center">
                     <a
-                        href="#sofia"
+                        href="https://app-supaso.vercel.app/#afiliados"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         id="proceso-cta"
                         className="btn-magnetic inline-flex items-center gap-3 px-10 py-5 rounded-2xl bg-dark text-white font-bold text-base shadow-2xl shadow-dark/20 hover:bg-primary transition-colors duration-300"
                     >
                         <Rocket size={20} />
-                        Iniciar mi proceso de afiliación
+                        Afiliarme
                     </a>
                     <p className="text-dark/30 text-sm mt-4">
                         Sin costos ocultos · Sin formularios en papel · 100% digital

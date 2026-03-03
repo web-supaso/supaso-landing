@@ -7,26 +7,29 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
     MessageSquare, X, Send, Phone, CheckCircle2, Bot,
-    ChevronRight, Mic, MicOff, Volume2, VolumeX,
+    ChevronRight, Mic, MicOff, Volume2, VolumeX, Download,
 } from "lucide-react";
 import { insertLead } from "../lib/supabaseClient";
 
-// ─── Mensaje de bienvenida (síntesis + chat) ─────────────────────────────────
-// WELCOME_TEXT: SUPASO se escribe con mayúsculas en pantalla pero como
-// "Supaso" en el texto hablado para que el TTS lo lea como nombre propio.
-const WELCOME_TEXT =
-    "Hola, soy Sofía, el Sistema Orientador de Formación e Información al Afiliado de Supaso. ¿En qué te puedo ayudar hoy? ¿Querés iniciar tu proceso de afiliación?";
+const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Buenos días.";
+    if (hour < 20) return "Buenas tardes.";
+    return "Buenas noches.";
+};
 
-const INITIAL_MESSAGES = [
+const getWelcomeText = () => `${getGreeting()} Soy Sofía, el Sistema Orientador de Formación e Información al Afiliado de Supaso. ¿En qué puedo ayudarte?`;
+
+const INITIAL_MESSAGES = () => [
     {
         id: 0,
         from: "bot",
-        text: "👋 Hola, soy Sofía — el Sistema Orientador de Formación e Información al Afiliado de SUPASO.",
+        text: `${getGreeting()} Soy Sofía, el Sistema Orientador de Formación e Información al Afiliado de SUPASO.`,
     },
     {
         id: 1,
         from: "bot",
-        text: "Estoy aquí para guiarte. ¿Sos profesional de Seguridad Ocupacional, Ambiente o Calidad? Te ayudo a iniciar tu afiliación. 🛡️",
+        text: "¿En qué puedo ayudarte?",
     },
 ];
 
@@ -50,8 +53,8 @@ function speak(rawText, onEnd) {
 
     const text = toSpoken(rawText);
     const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 0.94;
-    utter.pitch = 1.2;   // Tono más alto → voz femenina
+    utter.rate = 0.94;   // Velocidad moderada, institucional (0.92 - 0.96)
+    utter.pitch = 0.90;  // Tono ligeramente más grave para autoridad y claridad
     utter.volume = 1;
 
     const LATAM_LANGS = ["es-AR", "es-US", "es-MX", "es-CL", "es-CO", "es-419"];
@@ -180,9 +183,16 @@ function useSpeechRecognition({ onResult, onError }) {
 export default function Sofia() {
     const [open, setOpen] = useState(false);
     const [step, setStep] = useState("chat"); // 'chat' | 'form' | 'success'
-    const [messages, setMessages] = useState(INITIAL_MESSAGES);
+    const [formType, setFormType] = useState("default"); // 'default' | 'socio' | 'urgencia'
+    const [messages, setMessages] = useState([]);
+    useEffect(() => {
+        setMessages(INITIAL_MESSAGES());
+    }, []);
     const [inputText, setInputText] = useState("");
+    const [nombre, setNombre] = useState("");
     const [whatsapp, setWhatsapp] = useState("");
+    const [provinciaVive, setProvinciaVive] = useState("");
+    const [provinciaTrabaja, setProvinciaTrabaja] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [isSpeaking, setIsSpeaking] = useState(false);
@@ -191,17 +201,24 @@ export default function Sofia() {
     const [showTooltip, setShowTooltip] = useState(false);
     const [tooltipDismissed, setTooltipDismissed] = useState(false);
     const chatEndRef = useRef(null);
+    const nombreRef = useRef(null);
     const whatsappRef = useRef(null);
 
     // ── Auto-scroll a último mensaje ──────────────────────────────────────────
     useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        // Redujimos problemas de UI esperando un poco para que el render asiente el scroll
+        const timer = setTimeout(() => {
+            chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 150);
+        return () => clearTimeout(timer);
     }, [messages, step]);
 
-    // ── Foco en input WhatsApp al aparecer ───────────────────────────────────
+    // ── Foco y scroll al primer input ───────────────────────────────────────
     useEffect(() => {
         if (step === "form") {
-            setTimeout(() => whatsappRef.current?.focus(), 200);
+            setTimeout(() => {
+                nombreRef.current?.focus();
+            }, 300);
         }
     }, [step]);
 
@@ -218,23 +235,46 @@ export default function Sofia() {
         if (open) setShowTooltip(false);
     }, [open]);
 
+    // ── Helper para desbloquear micrófono post-hablar ─────────────────────────
+    const handleSpeakEnd = useCallback(() => {
+        setTimeout(() => setIsSpeaking(false), 500);
+    }, []);
+
     // ── Síntesis al primer open ───────────────────────────────────────────────
     useEffect(() => {
         if (open && !hasSpoken) {
             setHasSpoken(true);
-            // Pequeño delay para que el widget termine de renderizar
             setTimeout(() => {
                 setIsSpeaking(true);
-                speak(WELCOME_TEXT, () => setIsSpeaking(false));
+                speak(getWelcomeText(), handleSpeakEnd);
             }, 600);
         }
-    }, [open, hasSpoken]);
+    }, [open, hasSpoken, handleSpeakEnd]);
+
 
     // ── Detener síntesis al cerrar ────────────────────────────────────────────
     const handleClose = () => {
         window.speechSynthesis?.cancel();
         setIsSpeaking(false);
         setOpen(false);
+    };
+
+    // ── Descargar Conversación ────────────────────────────────────────────────
+    const handleDownloadChat = () => {
+        const chatText = messages.map(m => {
+            const sender = m.from === "bot" ? "S.O.F.I.A." : "Tú";
+            return `${sender}: ${m.text}`;
+        }).join("\n\n");
+
+        const blob = new Blob([chatText], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `conversacion_sofia_${new Date().toISOString().slice(0, 10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     };
 
     // ── Toggle síntesis manual ────────────────────────────────────────────────
@@ -246,7 +286,7 @@ export default function Sofia() {
             const lastBot = [...messages].reverse().find((m) => m.from === "bot");
             if (lastBot) {
                 setIsSpeaking(true);
-                speak(lastBot.text, () => setIsSpeaking(false));
+                speak(lastBot.text, handleSpeakEnd);
             }
         }
     };
@@ -256,9 +296,29 @@ export default function Sofia() {
         onResult: (transcript) => {
             setInputText(transcript);
             setSpeechError(null);
+            // Auto-send upon voice recognition result
+            if (transcript && transcript.trim()) {
+                // Pass transcript directly to avoid state sync issues on auto-send
+                handleSendText(null, transcript);
+            }
         },
         onError: (msg) => setSpeechError(msg),
     });
+
+    // ── Timer de inactividad (20 segundos) ───────────────────────────────────
+    useEffect(() => {
+        let timer;
+        const lastMsg = messages[messages.length - 1];
+        if (open && step === "chat" && !isListening && !isSpeaking && lastMsg?.from === "bot") {
+            timer = setTimeout(() => {
+                const idleText = "¿Sigues ahí? Indícame si tienes alguna otra consulta.";
+                setMessages((prev) => [...prev, { id: Date.now(), from: "bot", text: idleText }]);
+                setIsSpeaking(true);
+                speak(idleText, handleSpeakEnd);
+            }, 20000); // 20 segundos
+        }
+        return () => clearTimeout(timer);
+    }, [messages, step, isListening, isSpeaking, open, handleSpeakEnd]);
 
     const toggleMic = () => {
         if (isListening) stopListening();
@@ -266,16 +326,15 @@ export default function Sofia() {
     };
 
     // ── Enviar mensaje de texto ───────────────────────────────────────────────
-    const handleSendText = (e) => {
-        e?.preventDefault();
-        const text = inputText.trim();
+    const handleSendText = (e, autoText = null) => {
+        if (e) e.preventDefault();
+        const text = (autoText || inputText).trim();
         if (!text) return;
 
         const userMsg = { id: Date.now(), from: "user", text };
         setMessages((prev) => [...prev, userMsg]);
         setInputText("");
 
-        // Lógica de respuesta simple
         const lower = text.toLowerCase();
         setTimeout(() => {
             let botReply;
@@ -283,106 +342,134 @@ export default function Sofia() {
                 lower.includes("afiliar") ||
                 lower.includes("unirme") ||
                 lower.includes("quiero ser") ||
-                lower.includes("cómo me afilio") ||
-                lower.includes("como me afilio")
+                lower.includes("como me afilio") ||
+                lower.includes("cómo me afilio")
             ) {
+                // FLUJO A - Afiliación (Online, visual guide)
                 botReply =
-                    "¡Excelente! Para darte una atención personalizada, por favor dejame tu número de WhatsApp. Un asesor de SUPASO te va a contactar en breve. 📱";
-                setMessages((prev) => [
-                    ...prev,
-                    { id: Date.now() + 1, from: "bot", text: botReply },
-                ]);
+                    "Para afiliarte de forma online, haz clic en el botón 'Afiliarme' en la pantalla para completar tus datos. ¿Deseas conocer los beneficios legales o descuentos en salud mientras lo completas?";
+                setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
                 setIsSpeaking(true);
-                speak(botReply, () => setIsSpeaking(false));
+                speak(botReply, handleSpeakEnd);
+                // No form needed, just directions.
+            } else if (
+                lower.includes("urgente") ||
+                lower.includes("emergencia") ||
+                lower.includes("vence")
+            ) {
+                // FLUJO D - Urgencia legal
+                botReply =
+                    "Entiendo la urgencia. Priorizaré tu consulta para que el equipo legal te contacte a la brevedad. Por favor, indícame tu nombre y teléfono.";
+                setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
+                setFormType("urgencia");
+                setIsSpeaking(true);
+                speak(botReply, handleSpeakEnd);
+                setTimeout(() => setStep("form"), 700);
+            } else if (
+                lower.includes("soy socio") ||
+                lower.includes("soy afiliado") ||
+                lower.includes("ya estoy") ||
+                lower.includes("socio activo")
+            ) {
+                // FLUJO C - Socio activo con problema
+                botReply =
+                    "Comprendo. Para que el Secretario General de tu provincia gestione este tema, indícame tu nombre completo, teléfono, provincia de residencia y provincia de trabajo.";
+                setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
+                setFormType("socio");
+                setIsSpeaking(true);
+                speak(botReply, handleSpeakEnd);
                 setTimeout(() => setStep("form"), 700);
             } else if (
                 lower.includes("beneficio") ||
                 lower.includes("descuento")
             ) {
+                // Info - Beneficios
                 botReply =
-                    "¡Tenemos más de 200 prestadores en todo el país! Salud, turismo, farmacia, capacitación y más, con descuentos exclusivos para afiliados SUPASO. 🎁 ¿Te gustaría afiliarte para acceder a todos?";
-                setMessages((prev) => [
-                    ...prev,
-                    { id: Date.now() + 1, from: "bot", text: botReply },
-                ]);
+                    "Ofrecemos descuentos en comercios, salud, asistencia legal y turismo. ¿Necesitas ayuda con tu afiliación u otra consulta?";
+                setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
                 setIsSpeaking(true);
-                speak(botReply, () => setIsSpeaking(false));
+                speak(botReply, handleSpeakEnd);
             } else if (
-                lower.includes("ley") ||
-                lower.includes("norma") ||
-                lower.includes("srt") ||
-                lower.includes("legal")
+                lower.includes("cuota") ||
+                lower.includes("costo") ||
+                lower.includes("pagar")
             ) {
+                // Info - Costo de Cuota
                 botReply =
-                    "SUPASO trabaja bajo el marco de la Ley 19.587 y sus decretos reglamentarios, manteniendo actualizada la matriz normativa SRT para todos nuestros afiliados. 📋";
-                setMessages((prev) => [
-                    ...prev,
-                    { id: Date.now() + 1, from: "bot", text: botReply },
-                ]);
+                    "La cuota es del 2,5% del sueldo bruto para trabajadores en relación de dependencia. Para monotributistas o jubilados, varía según la categoría. Para asesorarte personalmente, indícame tu nombre y teléfono.";
+                setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
+                setFormType("default");
                 setIsSpeaking(true);
-                speak(botReply, () => setIsSpeaking(false));
-            } else if (
-                lower.includes("credencial") ||
-                lower.includes("carnet")
-            ) {
-                botReply =
-                    "Tu credencial digital SUPASO tiene código QR verificable en tiempo real, con vigencia legal ante inspecciones de la SRT y organismos de control. ¿Querés iniciar tu trámite?";
-                setMessages((prev) => [
-                    ...prev,
-                    { id: Date.now() + 1, from: "bot", text: botReply },
-                ]);
-                setIsSpeaking(true);
-                speak(botReply, () => setIsSpeaking(false));
+                speak(botReply, handleSpeakEnd);
+                setTimeout(() => setStep("form"), 700);
             } else {
+                // FLUJO B - Duda o Problema genérico (Lead Capture)
                 botReply =
-                    "Entendí tu consulta. Para brindarte una atención personalizada y conectarte con un asesor de SUPASO, dejame tu número de WhatsApp. ¡Te contactamos enseguida! 📞";
-                setMessages((prev) => [
-                    ...prev,
-                    { id: Date.now() + 1, from: "bot", text: botReply },
-                ]);
+                    "Entiendo y disculpa, pero no puedo darte esa información por aquí. Necesito tu nombre completo y teléfono para que el Secretario de tu provincia te contacte y resuelva tus dudas.";
+                setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
+                setFormType("default");
                 setIsSpeaking(true);
-                speak(botReply, () => setIsSpeaking(false));
+                speak(botReply, handleSpeakEnd);
                 setTimeout(() => setStep("form"), 700);
             }
         }, 600);
     };
 
-    // ── Botón "Quiero afiliarme" ──────────────────────────────────────────────
+    // ── Botón "Quiero afiliarme" (quick pick action) ────────────────────────
     const handleStartForm = () => {
         const botText =
-            "¡Perfecto! Para darte una atención personalizada, por favor dejame tu número de WhatsApp con código de área. Un asesor te contactará en breve. 📱";
+            "Para afiliarte de forma online, haz clic en el botón 'Afiliarme' en la pantalla para completar tus datos. ¿Deseas conocer los beneficios legales o descuentos en salud mientras lo completas?";
         setMessages((prev) => [
             ...prev,
             { id: Date.now(), from: "user", text: "Quiero afiliarme a SUPASO." },
             { id: Date.now() + 1, from: "bot", text: botText },
         ]);
         setIsSpeaking(true);
-        speak(botText, () => setIsSpeaking(false));
-        setTimeout(() => setStep("form"), 700);
+        speak(botText, handleSpeakEnd);
     };
 
-    // ── Submit WhatsApp a Supabase ─────────────────────────────────────────────
+    // ── Submit Lead a Supabase ──────────────────────────────────────────────────
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError(null);
-        if (!whatsapp || whatsapp.replace(/\D/g, "").length < 7) {
-            setError("Por favor ingresá un número de WhatsApp válido.");
+        if (!nombre.trim()) {
+            setError("Por favor ingresá tu nombre completo.");
             return;
         }
+        if (!whatsapp || whatsapp.replace(/\D/g, "").length < 7) {
+            setError("Por favor ingresá un número de teléfono válido.");
+            return;
+        }
+        if (formType === "socio" && (!provinciaVive.trim() || !provinciaTrabaja.trim())) {
+            setError("Por favor ingresá las provincias para derivarte correctamente.");
+            return;
+        }
+
         setLoading(true);
         try {
-            const { error: supaErr } = await insertLead(whatsapp);
+            // Separamos: enviamos el `nombre` limpiecito en la primera col, y la metadata de (estado legal u otras vars) lo metemos contiguo al teléfono si hiciera falta (para que Make lo reciba todo) o lo enviamos limpio.
+            let metadataTel = whatsapp;
+            if (formType === "socio") metadataTel += ` / Vive: ${provinciaVive} / Trabaja: ${provinciaTrabaja}`;
+            if (formType === "urgencia") metadataTel = `[URGENTE] ${metadataTel}`;
+
+            const { error: supaErr } = await insertLead(nombre, metadataTel);
             if (supaErr) throw new Error(supaErr.message);
 
-            const successText = `¡Tu solicitud fue registrada! Un asesor de SUPASO se pondrá en contacto al ${whatsapp} en breve. ¡Bienvenido al respaldo de élite! 💪`;
+            const successText = `Trámite finalizado. Gracias, ${nombre}. La Secretaría te contactará pronto. Si lo deseas, puedes descargar esta conversación utilizando el botón de descarga en la parte superior.`;
             setMessages((prev) => [
                 ...prev,
-                { id: Date.now(), from: "user", text: `Mi WhatsApp es: ${whatsapp}` },
+                { id: Date.now(), from: "user", text: `Mis datos: ${nombre} - ${whatsapp}` },
                 { id: Date.now() + 1, from: "bot", text: "✅ " + successText },
             ]);
             setIsSpeaking(true);
-            speak(successText, () => setIsSpeaking(false));
+            speak(successText, handleSpeakEnd);
             setStep("success");
+
+            // clear state
+            setNombre("");
+            setWhatsapp("");
+            setProvinciaVive("");
+            setProvinciaTrabaja("");
         } catch (err) {
             console.error("Error insertando lead:", err);
             setError("Error al enviar. Por favor intentá de nuevo.");
@@ -421,11 +508,11 @@ export default function Sofia() {
                         />
                         <Bot size={18} className="text-primary flex-shrink-0 mt-0.5" />
                         <p className="text-dark text-xs font-medium leading-snug">
-                            👋 ¡Hola! Soy Sofía<br />
-                            <span className="text-dark/60">¿Te ayudo a afiliarte?</span>
+                            ¿Necesitas asesoramiento legal o conocer los beneficios de SUPASO?<br />
+                            <span className="text-primary font-bold cursor-pointer hover:underline" onClick={() => setOpen(true)}>Haz clic para hablar conmigo.</span>
                         </p>
                         <button
-                            onClick={() => { setShowTooltip(false); setTooltipDismissed(true); }}
+                            onClick={(e) => { e.stopPropagation(); setShowTooltip(false); setTooltipDismissed(true); }}
                             className="text-dark/30 hover:text-dark/70 transition-colors flex-shrink-0 ml-1"
                             aria-label="Cerrar tooltip"
                         >
@@ -480,28 +567,41 @@ export default function Sofia() {
                             </div>
                         </div>
 
-                        {/* Botón silenciar/hablar */}
-                        <button
-                            onClick={toggleSpeak}
-                            className={`p-2 rounded-xl transition-all ${isSpeaking
-                                ? "bg-primary/20 text-primary"
-                                : "text-white/40 hover:text-white hover:bg-white/10"
-                                }`}
-                            aria-label={isSpeaking ? "Silenciar" : "Reproducir último mensaje"}
-                            title={isSpeaking ? "Silenciar" : "Reproducir último mensaje"}
-                        >
-                            {isSpeaking ? <Volume2 size={16} /> : <VolumeX size={16} />}
-                        </button>
+                        {/* Funciones adicionales */}
+                        <div className="flex items-center gap-1">
+                            {/* Botón Descargar chat */}
+                            <button
+                                onClick={handleDownloadChat}
+                                className="text-white/40 hover:text-white transition-colors p-2 rounded-xl hover:bg-white/10"
+                                aria-label="Descargar transcripción"
+                                title="Descargar conversación"
+                            >
+                                <Download size={16} />
+                            </button>
 
-                        {/* Cerrar */}
-                        <button
-                            onClick={handleClose}
-                            className="text-white/40 hover:text-white transition-colors p-1.5"
-                            aria-label="Cerrar S.O.F.I.A."
-                            id="sofia-close"
-                        >
-                            <X size={18} />
-                        </button>
+                            {/* Botón silenciar/hablar */}
+                            <button
+                                onClick={toggleSpeak}
+                                className={`p-2 rounded-xl transition-all ${isSpeaking
+                                    ? "bg-primary/20 text-primary"
+                                    : "text-white/40 hover:text-white hover:bg-white/10"
+                                    }`}
+                                aria-label={isSpeaking ? "Silenciar" : "Reproducir último mensaje"}
+                                title={isSpeaking ? "Silenciar" : "Reproducir último mensaje"}
+                            >
+                                {isSpeaking ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                            </button>
+
+                            {/* Cerrar */}
+                            <button
+                                onClick={handleClose}
+                                className="text-white/40 hover:text-white transition-colors p-1.5"
+                                aria-label="Cerrar S.O.F.I.A."
+                                id="sofia-close"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
                     </div>
 
                     {/* Messages */}
@@ -562,29 +662,69 @@ export default function Sofia() {
                             </div>
                         )}
 
-                        {/* Formulario WhatsApp — step: form */}
+                        {/* Formulario Captura Lead — step: form */}
                         {step === "form" && (
                             <form
                                 onSubmit={handleSubmit}
-                                className="mt-1 bg-white rounded-2xl p-4 border border-dark/10 shadow-sm flex flex-col gap-3"
+                                className="mt-1 bg-white rounded-2xl p-4 border border-dark/10 shadow-sm flex flex-col gap-3 flex-shrink-0"
                             >
-                                <p className="text-dark/60 text-xs leading-relaxed">
-                                    Ingresá tu número sin 0 ni 15 · Ej:{" "}
-                                    <span className="font-mono text-dark">11 4567 8901</span>
-                                </p>
-                                <div className="flex items-center gap-2 border border-dark/15 rounded-xl px-3 py-2.5 focus-within:border-primary transition-colors">
-                                    <Phone size={16} className="text-dark/40 flex-shrink-0" />
+                                <div className="flex flex-col gap-1 text-dark/70 text-xs">
+                                    <label>Nombre y apellido</label>
                                     <input
-                                        id="sofia-whatsapp-input"
-                                        ref={whatsappRef}
-                                        type="tel"
-                                        placeholder="Ej: 11 5012 3456"
-                                        value={whatsapp}
-                                        onChange={(e) => setWhatsapp(e.target.value)}
-                                        className="flex-1 outline-none text-sm text-dark placeholder:text-dark/30 bg-transparent"
-                                        maxLength={20}
+                                        ref={nombreRef}
+                                        type="text"
+                                        placeholder="Tu nombre aquí"
+                                        value={nombre}
+                                        onChange={(e) => setNombre(e.target.value)}
+                                        className="border border-dark/15 rounded-xl px-3 py-2 text-dark bg-transparent focus:border-primary transition-colors outline-none w-full"
+                                        required
                                     />
                                 </div>
+                                <div className="flex flex-col gap-1 text-dark/70 text-xs mt-1">
+                                    <label>Número de teléfono (con cód. de área)</label>
+                                    <div className="flex items-center gap-2 border border-dark/15 rounded-xl px-3 py-2.5 focus-within:border-primary transition-colors">
+                                        <Phone size={14} className="text-dark/40 flex-shrink-0" />
+                                        <input
+                                            id="sofia-whatsapp-input"
+                                            ref={whatsappRef}
+                                            type="tel"
+                                            placeholder="11 5012 3456"
+                                            value={whatsapp}
+                                            onChange={(e) => setWhatsapp(e.target.value)}
+                                            className="flex-1 outline-none text-sm text-dark placeholder:text-dark/30 bg-transparent w-full"
+                                            maxLength={20}
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                {formType === "socio" && (
+                                    <>
+                                        <div className="flex flex-col gap-1 text-dark/70 text-xs mt-1">
+                                            <label>Provincia donde residís</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Ej. Córdoba"
+                                                value={provinciaVive}
+                                                onChange={(e) => setProvinciaVive(e.target.value)}
+                                                className="border border-dark/15 rounded-xl px-3 py-2 text-dark bg-transparent focus:border-primary transition-colors outline-none w-full"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="flex flex-col gap-1 text-dark/70 text-xs mt-1">
+                                            <label>Provincia donde trabajás</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Ej. Tierra del Fuego"
+                                                value={provinciaTrabaja}
+                                                onChange={(e) => setProvinciaTrabaja(e.target.value)}
+                                                className="border border-dark/15 rounded-xl px-3 py-2 text-dark bg-transparent focus:border-primary transition-colors outline-none w-full"
+                                                required
+                                            />
+                                        </div>
+                                    </>
+                                )}
+
                                 {error && <p className="text-danger text-xs px-1">{error}</p>}
                                 <button
                                     type="submit"
@@ -603,7 +743,7 @@ export default function Sofia() {
                                     ) : (
                                         <>
                                             <Send size={16} />
-                                            Solicitar afiliación
+                                            Enviar
                                         </>
                                     )}
                                 </button>
@@ -665,15 +805,18 @@ export default function Sofia() {
                             <button
                                 type="button"
                                 onClick={toggleMic}
+                                disabled={isSpeaking}
                                 id="sofia-mic-btn"
                                 aria-label={isListening ? "Detener micrófono" : "Activar micrófono"}
                                 className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-200 ${isListening
-                                    ? "bg-danger/10 text-danger animate-pulse"
-                                    : "bg-dark/5 text-dark/50 hover:bg-primary/10 hover:text-primary"
+                                    ? "bg-success/10 text-success animate-pulse" // Verde cuando escucha
+                                    : isSpeaking
+                                        ? "bg-dark/5 text-dark/30 cursor-not-allowed"
+                                        : "bg-danger/10 text-danger hover:bg-danger/20" // Rojo cuando no escucha
                                     }`}
-                                title={isListening ? "Escuchando… click para detener" : "Hablar"}
+                                title={isSpeaking ? "Sofía está hablando..." : isListening ? "Escuchando… click para detener" : "Hablar"}
                             >
-                                {isListening ? <MicOff size={17} /> : <Mic size={17} />}
+                                {isListening ? <Mic size={17} /> : <MicOff size={17} />}
                             </button>
 
                             {/* Botón enviar */}
@@ -696,8 +839,9 @@ export default function Sofia() {
                             SUPASO · Automatización vía Make.com
                         </span>
                     </div>
-                </div>
-            )}
+                </div >
+            )
+            }
         </>
     );
 }

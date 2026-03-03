@@ -19,13 +19,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
  * Inserta un nuevo lead en la tabla leads_sofia.
- * @param {string} whatsapp - Número de WhatsApp del profesional
+ * @param {string} nombre - Nombre completo del usuario
+ * @param {string} whatsapp - Número o texto combinado con datos
  * @returns {{ data, error }}
  */
-export async function insertLead(whatsapp) {
+export async function insertLead(nombre, whatsapp) {
     const { data, error } = await supabase
         .from("leads_sofia")
-        .insert([{ whatsapp }])
-        .select();
+        .insert([{ nombre, whatsapp }]);
     return { data, error };
 }

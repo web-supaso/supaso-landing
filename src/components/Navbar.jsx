@@ -12,18 +12,13 @@ export default function Navbar() {
         return () => window.removeEventListener("scroll", onScroll);
     }, []);
 
-    const navLinks = [
-        { label: "Inicio", href: "#hero" },
-        { label: "Beneficios", href: "#features" },
-        { label: "Manifiesto", href: "#manifiesto" },
-        { label: "Afiliados", href: "#sofia" },
-    ];
+    const navLinks = [];
 
     return (
         <header
             className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[96%] max-w-6xl transition-all duration-500 rounded-2xl px-6 py-3 flex items-center justify-between ${scrolled
-                    ? "bg-white/80 backdrop-blur-xl shadow-xl border border-white/50"
-                    : "bg-transparent"
+                ? "bg-white/80 backdrop-blur-xl shadow-xl border border-white/50"
+                : "bg-transparent"
                 }`}
         >
             {/* Logo animado */}
@@ -64,18 +59,8 @@ export default function Navbar() {
                 </div>
             </a>
 
-            {/* Nav links desktop */}
+            {/* Nav links desktop (removed) */}
             <nav className="hidden md:flex items-center gap-6">
-                {navLinks.map((l) => (
-                    <a
-                        key={l.label}
-                        href={l.href}
-                        className={`text-sm font-medium transition-colors duration-200 hover:text-primary ${scrolled ? "text-dark" : "text-white/80"
-                            }`}
-                    >
-                        {l.label}
-                    </a>
-                ))}
             </nav>
 
             {/* CTAs */}
@@ -86,14 +71,16 @@ export default function Navbar() {
                     rel="noopener noreferrer"
                     id="nav-portal"
                     className={`text-sm font-semibold px-4 py-2 rounded-xl border transition-all duration-200 btn-magnetic ${scrolled
-                            ? "border-dark/20 text-dark hover:border-primary hover:text-primary"
-                            : "border-white/30 text-white hover:border-white"
+                        ? "border-dark/20 text-dark hover:border-primary hover:text-primary"
+                        : "border-white/30 text-white hover:border-white"
                         }`}
                 >
                     Portal de Afiliados
                 </a>
                 <a
-                    href="#sofia"
+                    href="https://app-supaso.vercel.app/#afiliados"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     id="nav-afiliarme"
                     className="btn-magnetic text-sm font-bold px-5 py-2.5 rounded-xl bg-primary text-white shadow-lg shadow-primary/30"
                 >
@@ -115,16 +102,6 @@ export default function Navbar() {
             {/* Mobile dropdown */}
             {menuOpen && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/50 p-4 flex flex-col gap-3 md:hidden">
-                    {navLinks.map((l) => (
-                        <a
-                            key={l.label}
-                            href={l.href}
-                            onClick={() => setMenuOpen(false)}
-                            className="text-dark font-medium py-1 hover:text-primary transition-colors"
-                        >
-                            {l.label}
-                        </a>
-                    ))}
                     <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-dark/10">
                         <a
                             href="https://app-supaso.vercel.app"
@@ -135,7 +112,9 @@ export default function Navbar() {
                             Portal de Afiliados
                         </a>
                         <a
-                            href="#sofia"
+                            href="https://app-supaso.vercel.app/#afiliados"
+                            target="_blank"
+                            rel="noopener noreferrer"
                             onClick={() => setMenuOpen(false)}
                             className="text-center py-2.5 rounded-xl bg-primary text-white font-bold text-sm"
                         >

@@ -78,7 +78,9 @@ export default function Hero() {
                 {/* CTAs */}
                 <div className="hero-ctas flex flex-wrap gap-4 mt-10">
                     <a
-                        href="#sofia"
+                        href="https://app-supaso.vercel.app/#afiliados"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         id="hero-cta-afiliarme"
                         className="btn-magnetic px-8 py-4 rounded-2xl bg-primary text-white font-bold text-base shadow-2xl shadow-primary/40 flex items-center gap-2"
                     >
