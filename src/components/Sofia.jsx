@@ -10,6 +10,7 @@ import {
     ChevronRight, Mic, MicOff, Volume2, VolumeX, Download,
 } from "lucide-react";
 import { insertLead } from "../lib/supabaseClient";
+import { askGemini } from "../lib/gemini";
 
 const getGreeting = () => {
     const hour = new Date().getHours();
@@ -336,7 +337,7 @@ export default function Sofia() {
         setInputText("");
 
         const lower = text.toLowerCase();
-        setTimeout(() => {
+        setTimeout(async () => {
             let botReply;
             if (
                 lower.includes("afiliar") ||
@@ -403,14 +404,37 @@ export default function Sofia() {
                 speak(botReply, handleSpeakEnd);
                 setTimeout(() => setStep("form"), 700);
             } else {
-                // FLUJO B - Duda o Problema genérico (Lead Capture)
-                botReply =
-                    "Entiendo y disculpa, pero no puedo darte esa información por aquí. Necesito tu nombre completo y teléfono para que el Secretario de tu provincia te contacte y resuelva tus dudas.";
-                setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
-                setFormType("default");
-                setIsSpeaking(true);
-                speak(botReply, handleSpeakEnd);
-                setTimeout(() => setStep("form"), 700);
+                // FLUJO B - Inteligencia de Gemini
+                setMessages((prev) => [...prev, { id: "gemini_typing", from: "bot", text: "..." }]);
+
+                try {
+                    let aiReply = await askGemini(messages, text);
+                    let wantsData = false;
+
+                    if (aiReply.includes("[PEDIR_DATOS]")) {
+                        wantsData = true;
+                        aiReply = aiReply.replace(/\[PEDIR_DATOS\]/g, "").trim();
+                    }
+
+                    // Eliminar "escribiendo..."
+                    setMessages((prev) => prev.filter(m => m.id !== "gemini_typing"));
+
+                    setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: aiReply }]);
+                    if (wantsData) setFormType("default");
+                    setIsSpeaking(true);
+                    speak(aiReply, handleSpeakEnd);
+                    if (wantsData) setTimeout(() => setStep("form"), 1500);
+
+                } catch (err) {
+                    console.error("Gemini failed", err);
+                    botReply = "Entiendo y disculpa, tuve una desconexión. Necesito tu nombre y teléfono para que un asesor te contacte personalmente.";
+                    setMessages((prev) => prev.filter(m => m.id !== "gemini_typing"));
+                    setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
+                    setFormType("default");
+                    setIsSpeaking(true);
+                    speak(botReply, handleSpeakEnd);
+                    setTimeout(() => setStep("form"), 700);
+                }
             }
         }, 600);
     };
