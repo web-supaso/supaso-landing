@@ -37,18 +37,16 @@ export async function askGemini(chatHistory, newText) {
             }
         });
 
-        // Filtrar mensajes del sistema o de la forma que no aporten mucho.
-        // Tomamos los últimos 8 mensajes para no excedernos en contexto y obviar los saludos largos si hubiera.
-        const historyForGemini = chatHistory.slice(-8).map(msg => ({
-            role: msg.from === "bot" ? "model" : "user",
-            parts: [{ text: msg.text.replace(/\[PEDIR_DATOS\]/g, "") }],
-        }));
+        // Combinar el historial anterior en texto plano para que Gemini tenga contexto sin romper 
+        // la regla estricta de Google de "alternancia de roles" (user->model->user).
+        const historyText = chatHistory.slice(-8).map(msg => {
+            const label = msg.from === "bot" ? "S.O.F.I.A:" : "Usuario:";
+            return `${label} ${msg.text.replace(/\[PEDIR_DATOS\]/g, "").trim()}`;
+        }).join("\n");
 
-        const chatSession = model.startChat({
-            history: historyForGemini
-        });
+        const prompt = `HISTORIAL DE LA CONVERSACIÓN:\n${historyText}\n\nUsuario dice: ${newText}`;
 
-        const result = await chatSession.sendMessage(newText);
+        const result = await model.generateContent(prompt);
         return result.response.text();
     } catch (error) {
         console.error("Gemini API Error:", error);
