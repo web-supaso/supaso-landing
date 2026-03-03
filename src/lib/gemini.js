@@ -25,17 +25,46 @@ Ejemplo queja laboral:
 "Toda la información que compartas aquí es 100% confidencial y protegida por el sindicato. Contamos con un equipo legal que analizará tu caso sin costo. Para que tu Secretario provincial se comunique de urgencia, por favor ingresá tus datos. [PEDIR_DATOS]"
 `;
 
+import { supabase } from "./supabaseClient";
+
 export async function askGemini(chatHistory, newText) {
     if (!apiKey) return "Disculpa, ha ocurrido un error de conexión con la inteligencia central de SUPASO. [PEDIR_DATOS]";
 
     try {
+        // 1. Fase RAG (Búsqueda en Cerebro Supabase)
+        // Traemos todo de la tabla porque por ahora son pocos registros.
+        // Después, con más de 100 registros, usaríamos vectores pgvector.
+        const { data: knowledge, error: kError } = await supabase
+            .from("sofia_knowledge")
+            .select("tema, palabras_claves, contenido");
+
+        let contextoEspecial = "";
+
+        if (!kError && knowledge && knowledge.length > 0) {
+            const userTextoLimpio = newText.toLowerCase();
+            // Buscamos si alguna palabra clave de la base coincide con lo que tipeó el usuario
+            const documentosRelevantes = knowledge.filter(doc => {
+                const keywords = doc.palabras_claves.split(",").map(k => k.trim().toLowerCase());
+                return keywords.some(k => userTextoLimpio.includes(k) && k.length > 3);
+            });
+
+            if (documentosRelevantes.length > 0) {
+                contextoEspecial = "\n\n*** ATENCIÓN S.O.F.I.A: EL USUARIO ESTÁ PREGUNTANDO ALGO QUE TENEMOS EN NUESTRO MANUAL. RESPONDE BASÁNDOTE *EXCLUSIVAMENTE* EN ESTE TEXTO OFICIAL DE SUPASO (puedes resumirlo amablemente, pero respeta la información exacta impartida aquí): ***\n\n";
+                documentosRelevantes.forEach(doc => {
+                    contextoEspecial += `TEMA: ${doc.tema}\nTEXTO LEGAL: ${doc.contenido}\n\n`;
+                });
+            }
+        }
+
+        const currentSystemInstruction = SYSTEM_INSTRUCTION + contextoEspecial;
+
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
             model: "gemini-2.5-flash",
-            systemInstruction: SYSTEM_INSTRUCTION,
+            systemInstruction: currentSystemInstruction,
             generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 220,
+                temperature: 0.2, // Mantenerlo bajo 0.2 para que sea estricto con las leyes
+                maxOutputTokens: 250,
             }
         });
 
