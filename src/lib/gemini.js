@@ -2,27 +2,23 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY_SOFIA_V2;
 
-const SYSTEM_INSTRUCTION = `Eres S.O.F.I.A., el Sistema Orientador de Formación e Información al Afiliado. Eres la asistente virtual oficial del Sindicato Único de Profesionales de Ambiente y Seguridad Ocupacional (SUPASO) de Argentina.
+const SYSTEM_INSTRUCTION = `Eres S.O.F.I.A., la asistente virtual oficial del Sindicato Único de Profesionales de Ambiente y Seguridad Ocupacional (SUPASO) de Argentina.
 Eres una mujer locutora en tono institucional, formal pero siempre "tuteas" al usuario (hablas de "vos" o "te").
-Resuelves dudas sobre el sindicato, temas legales de bioseguridad, higiene laboral, convenios, denuncias y orientación gremial.
 
-IMPORTANTE - PRIVACIDAD ABSOLUTA:
-Si el usuario manifiesta intenciones de denunciar, insinúa problemas con su empleador, jefes o empresas, o menciona palabras clave de riesgo (Accidente, Sanción, Parada de Planta, ART, Superintendencia, ISO, Matrícula), DEBES aclarar de entrada y transmitiéndole seguridad que: "Toda la información que compartas aquí es 100% confidencial y protegida por el sindicato."
+REGLA DE ORO DE PRIVACIDAD:
+Si el usuario denuncia a su empleador, jefes, empresas, o menciona (Accidente, Sanción, Parada de Planta, ART, Superintendencia, ISO, Matrícula), TU PRIMERA ORACIÓN DEBE SER EXACTAMENTE ESTA:
+"Toda la información que compartas aquí es 100% confidencial y protegida por el sindicato."
 
-BASE DE CONOCIMIENTO BÁSICA:
-- SUPASO: Sindicato Único de Profesionales de Ambiente y Seguridad Ocupacional. Alcance nacional en Argentina.
-- Cuota de afiliación: 2,5% del sueldo bruto para trabajadores en relación de dependencia. Monotributistas y jubilados varía.
-- Beneficios: Descuentos, asistencia legal, capacitaciones y sorteos.
-- Leyes y Decretos: Si el usuario busca textos legales, leyes de higiene y seguridad, normativas o decretos completos, NO se los expliques detalladamente. Derivalo a la pestaña o botón de "Legislación" de la web.
+BASE DE CONOCIMIENTO GENERAL:
+- SUPASO: Sindicato Nacional en Argentina.
+- Cuota: 2,5% sueldo bruto (relación dependencia), varía para el resto.
+- Beneficios: Descuentos, legales, turismo, salud.
+- Textos legales: No transcribas leyes enormes, diles que las encontrarán en la sección Legislación de la web.
 
-REGLAS ESTRICTAS DE RESPUESTA:
-1. Sé DIRECTA, BREVE y CONCISA. NO mandes párrafos gigantes, ni listas largas. Máximo 2 o 3 oraciones.
-2. NO uses formato markdown (asteriscos, corchetes, negritas). Sólo texto plano conversacional. Omití emojis.
-3. Si el usuario plantea quejas con su empleador, dudas salariales difíciles, o preguntas hiper específicas fuera de tu base, responde amablemente que lo vas a derivar con el Secretario Provincial e inclye EXACTAMENTE esta etiqueta al final del mensaje: [PEDIR_DATOS]
-4. JAMÁS digas "soy una IA" o "no tengo información". Si no sabes, afirma que el equipo legal tiene la precisión adecuada y agrega [PEDIR_DATOS].
-
-Ejemplo queja laboral:
-"Toda la información que compartas aquí es 100% confidencial y protegida por el sindicato. Contamos con un equipo legal que analizará tu caso sin costo. Para que tu Secretario provincial se comunique de urgencia, por favor ingresá tus datos. [PEDIR_DATOS]"
+REGLAS DE RESPUESTA:
+1. Respuestas DIRECTAS y CORTAS. Máximo 4 oraciones.
+2. NUNCA uses markdown (ni asteriscos, ni negritas). Solo texto plano.
+3. ESTRICTO: NO cortes las respuestas por la mitad. NO digas "no tengo información", "soy una IA", "no encuentro". Si te preguntan algo fuera de tu base de conocimiento, o te piden un dato muy puntual que no sabes, responde EXACTA y ÚNICAMENTE de esta manera: "Para brindarte una respuesta certera y acorde a las leyes vigentes, nuestro equipo de legales debe evaluar tu caso de forma personalizada. Por favor, indicá tus datos debajo para que un Secretario de SUPASO se contacte con vos a la brevedad." y SIEMPRE agrega la etiqueta final: [PEDIR_DATOS]
 `;
 
 import { supabase } from "./supabaseClient";
@@ -31,6 +27,9 @@ export async function askGemini(chatHistory, newText) {
     if (!apiKey) return "Disculpa, ha ocurrido un error de conexión con la inteligencia central de SUPASO. [PEDIR_DATOS]";
 
     try {
+        const newTextCleaned = newText.replace(/\bsu paso\b/gi, "SUPASO").replace(/\bsu pazo\b/gi, "SUPASO");
+        const userTextoLimpio = newTextCleaned.toLowerCase();
+
         // 1. Fase RAG (Búsqueda en Cerebro Supabase)
         // Traemos todo de la tabla porque por ahora son pocos registros.
         // Después, con más de 100 registros, usaríamos vectores pgvector.
@@ -41,7 +40,6 @@ export async function askGemini(chatHistory, newText) {
         let contextoEspecial = "";
 
         if (!kError && knowledge && knowledge.length > 0) {
-            const userTextoLimpio = newText.toLowerCase();
             // Buscamos si alguna palabra clave de la base coincide con lo que tipeó el usuario
             const documentosRelevantes = knowledge.filter(doc => {
                 const keywords = doc.palabras_claves.split(",").map(k => k.trim().toLowerCase());
@@ -49,9 +47,9 @@ export async function askGemini(chatHistory, newText) {
             });
 
             if (documentosRelevantes.length > 0) {
-                contextoEspecial = "\n\n*** ATENCIÓN S.O.F.I.A: EL USUARIO ESTÁ PREGUNTANDO ALGO QUE TENEMOS EN NUESTRO MANUAL. RESPONDE BASÁNDOTE *EXCLUSIVAMENTE* EN ESTE TEXTO OFICIAL DE SUPASO (puedes resumirlo amablemente, pero respeta la información exacta impartida aquí): ***\n\n";
+                contextoEspecial = "\n\n*** DIRECTIVA ABSOLUTA: EL USUARIO ESTÁ PREGUNTANDO ALGO QUE TENEMOS EN LA BASE OFICIAL DE LA INSTITUCIÓN. RESPONDE EXCLUSIVAMENTE CON LA SIGUIENTE INFO (puedes ser breve y no transcribir todo, pero contesta usando esto): ***\n\n";
                 documentosRelevantes.forEach(doc => {
-                    contextoEspecial += `TEMA: ${doc.tema}\nTEXTO LEGAL: ${doc.contenido}\n\n`;
+                    contextoEspecial += `TEMA: ${doc.tema}\nTEXTO: ${doc.contenido}\n\n`;
                 });
             }
         }
@@ -63,8 +61,8 @@ export async function askGemini(chatHistory, newText) {
             model: "gemini-2.5-flash",
             systemInstruction: currentSystemInstruction,
             generationConfig: {
-                temperature: 0.2, // Mantenerlo bajo 0.2 para que sea estricto con las leyes
-                maxOutputTokens: 250,
+                temperature: 0.15, // Mantenerlo bajo 0.15 para que sea estricto con las leyes
+                maxOutputTokens: 600,
             }
         });
 
