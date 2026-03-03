@@ -59,8 +59,11 @@ export default function Navbar() {
                 </div>
             </a>
 
-            {/* Nav links desktop (removed) */}
+            {/* Nav links desktop */}
             <nav className="hidden md:flex items-center gap-6">
+                <a href="#legislacion" className={`text-sm font-semibold transition-colors ${scrolled ? "text-dark/80 hover:text-primary" : "text-white/90 hover:text-white"}`}>Legislación</a>
+                <a href="#autoridades" className={`text-sm font-semibold transition-colors ${scrolled ? "text-dark/80 hover:text-primary" : "text-white/90 hover:text-white"}`}>Autoridades</a>
+                <a href="#beneficios" className={`text-sm font-semibold transition-colors ${scrolled ? "text-dark/80 hover:text-primary" : "text-white/90 hover:text-white"}`}>Beneficios</a>
             </nav>
 
             {/* CTAs */}
@@ -102,6 +105,11 @@ export default function Navbar() {
             {/* Mobile dropdown */}
             {menuOpen && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/50 p-4 flex flex-col gap-3 md:hidden">
+                    <div className="flex flex-col gap-1">
+                        <a href="#legislacion" onClick={() => setMenuOpen(false)} className="px-3 py-2 rounded-xl text-dark/80 font-medium hover:bg-dark/5 hover:text-primary transition-colors">Legislación</a>
+                        <a href="#autoridades" onClick={() => setMenuOpen(false)} className="px-3 py-2 rounded-xl text-dark/80 font-medium hover:bg-dark/5 hover:text-primary transition-colors">Autoridades</a>
+                        <a href="#beneficios" onClick={() => setMenuOpen(false)} className="px-3 py-2 rounded-xl text-dark/80 font-medium hover:bg-dark/5 hover:text-primary transition-colors">Beneficios</a>
+                    </div>
                     <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-dark/10">
                         <a
                             href="https://app-supaso.vercel.app"
