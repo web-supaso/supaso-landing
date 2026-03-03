@@ -29,7 +29,7 @@ export async function askGemini(chatHistory, newText) {
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-3.1-pro-preview",
+            model: "gemini-2.5-flash",
             systemInstruction: SYSTEM_INSTRUCTION,
             generationConfig: {
                 temperature: 0.2,
