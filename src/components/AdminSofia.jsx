@@ -13,16 +13,29 @@ export default function AdminSofia() {
     const [formContenido, setFormContenido] = useState("");
 
     // Un pequeño filtro para que no cualquiera entre
-    const handleLogin = (e) => {
+    const handleLogin = async (e) => {
         e.preventDefault();
-        // Contraseña básica hardcodeada para proteger la vista en el frontend.
-        // En una app real de backend, esto se haría validando sesión de Supabase Auth.
-        if (password === "supaso2026") {
+        setLoading(true);
+
+        // Autenticación real con Supabase para poder escribir en la tabla
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: 'admin@supaso.org',
+            password: password
+        });
+
+        if (error) {
+            console.error("Error al iniciar sesión:", error.message);
+            alert("Contraseña incorrecta o error de conexión.");
+        } else {
             setIsAuthenticated(true);
             fetchDocs();
-        } else {
-            alert("Contraseña incorrecta");
         }
+        setLoading(false);
+    };
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        window.location.href = "/";
     };
 
     const fetchDocs = async () => {
@@ -105,8 +118,8 @@ export default function AdminSofia() {
                         className="w-full px-4 py-3 rounded-xl border border-dark/20 text-dark outline-none focus:border-primary mb-4"
                         required
                     />
-                    <button type="submit" className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-primary/90 transition-colors">
-                        Ingresar al Sistema
+                    <button type="submit" disabled={loading} className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50">
+                        {loading ? "Verificando..." : "Ingresar al Sistema"}
                     </button>
                     <button
                         type="button"
@@ -139,7 +152,7 @@ export default function AdminSofia() {
                             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
                             Refrescar
                         </button>
-                        <button onClick={() => window.location.href = "/"} className="flex items-center gap-2 px-4 py-2 bg-dark text-white rounded-xl hover:bg-dark/90 transition-colors font-medium text-sm">
+                        <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-dark text-white rounded-xl hover:bg-dark/90 transition-colors font-medium text-sm">
                             <X size={16} />
                             Cerrar Admin
                         </button>

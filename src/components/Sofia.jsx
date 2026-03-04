@@ -45,93 +45,56 @@ function toSpoken(text) {
         .replace(/\bQR\b/g, "código Q R");
 }
 
-// ─── Síntesis de voz — voz femenina latinoamericana ──────────────────────────
-// Prioridad: es-AR femenina → es-US femenina → es-MX femenina
-// → cualquier voz latina → excluye es-ES (acento de España)
-function speak(rawText, onEnd) {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
+// ─── Síntesis de voz mediante Edge Function (ElevenLabs) ──────────────────────
+let currentAudio = null;
+
+async function speak(rawText, onEnd) {
+    // Si ya hay alguien hablando, lo cortamos
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+    }
 
     const text = toSpoken(rawText);
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 0.94;   // Velocidad moderada, institucional (0.92 - 0.96)
-    utter.pitch = 0.90;  // Tono ligeramente más grave para autoridad y claridad
-    utter.volume = 1;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID;
 
-    const LATAM_LANGS = ["es-AR", "es-US", "es-MX", "es-CL", "es-CO", "es-419"];
-    const FEMALE_PATTERN = /female|woman|femenin|paulina|mónica|monica|luciana|valentina|camila|sofía|sofia|maria|renata|conchita/i;
+    try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/chat-tts`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${anonKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ text, voice_id: voiceId })
+        });
 
-    const trySpeak = () => {
-        const voices = window.speechSynthesis.getVoices();
-        let chosen = null;
-
-        // 1. Nombres explícitos de voces femeninas dulces latinas o preferidas
-        const PREFERRED_NAMES = [
-            "google español de estados", // Google Español de EEUU (femenina, natural, latino)
-            "sabina",                    // Microsoft Sabina (es-MX)
-            "paulina",                   // Paulina (es-MX / Apple)
-            "luciana",                   // Luciana
-            "google español",            // Google Español (femenina por defecto en Chrome)
-            "mónica", "monica",          // Mónica (es-ES / Apple)
-            "helena",                    // Microsoft Helena (es-ES) 
-        ];
-
-        for (const name of PREFERRED_NAMES) {
-            chosen = voices.find(v => v.name.toLowerCase().includes(name));
-            if (chosen) break;
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("Error en TTS Edge Function:", errText);
+            if (onEnd) onEnd();
+            return;
         }
 
-        // 2. Si no encontró ninguna de las explícitas, buscar usando patrones rigurosos excluyendo masculinas
-        if (!chosen) {
-            const MALE_NAMES = /male|man|masculino|tomas|tomás|raul|raúl|pablo|jorge|diego|carlos/i;
-            const FEMALE_PATTERN = /female|woman|femenin|paulina|mónica|monica|luciana|valentina|camila|sofía|sofia|maria|renata|conchita|helena|sabina/i;
-            const LATAM_LANGS = ["es-AR", "es-US", "es-MX", "es-CO", "es-CL", "es-419"];
+        const blob = await response.blob();
+        const audioUrl = URL.createObjectURL(blob);
+        currentAudio = new Audio(audioUrl);
 
-            // 2a. Mujer latina explícita
-            chosen = voices.find(
-                (v) => LATAM_LANGS.includes(v.lang) && FEMALE_PATTERN.test(v.name) && !MALE_NAMES.test(v.name)
-            );
+        currentAudio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            if (onEnd) onEnd();
+        };
 
-            // 2b. Cualquier mujer en español
-            if (!chosen) {
-                chosen = voices.find(
-                    (v) => v.lang.startsWith("es") && FEMALE_PATTERN.test(v.name) && !MALE_NAMES.test(v.name)
-                );
-            }
+        currentAudio.onerror = () => {
+            URL.revokeObjectURL(audioUrl);
+            if (onEnd) onEnd();
+        };
 
-            // 2c. Algún latinoamericano que no tenga nombre de varón explícito
-            if (!chosen) {
-                chosen = voices.find(
-                    (v) => LATAM_LANGS.includes(v.lang) && !MALE_NAMES.test(v.name)
-                );
-            }
-
-            // 2d. Algún español que no sea varón
-            if (!chosen) {
-                chosen = voices.find((v) => v.lang.startsWith("es") && !MALE_NAMES.test(v.name));
-            }
-
-            // 2e. Último absoluto: cualquier español
-            if (!chosen) {
-                chosen = voices.find((v) => v.lang.startsWith("es"));
-            }
-        }
-
-        if (chosen) {
-            utter.voice = chosen;
-            utter.lang = chosen.lang;
-        } else {
-            utter.lang = "es-AR";
-        }
-
-        if (onEnd) utter.onend = onEnd;
-        window.speechSynthesis.speak(utter);
-    };
-
-    if (window.speechSynthesis.getVoices().length > 0) {
-        trySpeak();
-    } else {
-        window.speechSynthesis.addEventListener("voiceschanged", trySpeak, { once: true });
+        await currentAudio.play();
+    } catch (err) {
+        console.error("Error reproduciendo audio:", err);
+        if (onEnd) onEnd();
     }
 }
 
@@ -255,7 +218,10 @@ export default function Sofia() {
 
     // ── Detener síntesis al cerrar ────────────────────────────────────────────
     const handleClose = () => {
-        window.speechSynthesis?.cancel();
+        if (currentAudio) {
+            currentAudio.pause();
+            currentAudio = null;
+        }
         setIsSpeaking(false);
         setOpen(false);
     };
@@ -281,7 +247,10 @@ export default function Sofia() {
     // ── Toggle síntesis manual ────────────────────────────────────────────────
     const toggleSpeak = () => {
         if (isSpeaking) {
-            window.speechSynthesis?.cancel();
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio = null;
+            }
             setIsSpeaking(false);
         } else {
             const lastBot = [...messages].reverse().find((m) => m.from === "bot");
@@ -312,10 +281,12 @@ export default function Sofia() {
         const lastMsg = messages[messages.length - 1];
         if (open && step === "chat" && !isListening && !isSpeaking && lastMsg?.from === "bot") {
             timer = setTimeout(() => {
-                const idleText = "¿Sigues ahí? Indícame si tienes alguna otra consulta.";
+                const idleText = "¿Sigues ahí? Para no perder más tiempo y resolver tu consulta, por favor déjame tu nombre y teléfono.";
                 setMessages((prev) => [...prev, { id: Date.now(), from: "bot", text: idleText }]);
+                setFormType("default");
                 setIsSpeaking(true);
                 speak(idleText, handleSpeakEnd);
+                setTimeout(() => setStep("form"), 1500);
             }, 20000); // 20 segundos
         }
         return () => clearTimeout(timer);
