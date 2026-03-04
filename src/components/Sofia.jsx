@@ -78,13 +78,20 @@ async function speak(rawText, onEnd) {
     const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
 
     try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/chat-tts`, {
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, voice_id: voiceId })
+            headers: {
+                'xi-api-key': import.meta.env.VITE_ELEVENLABS_API_KEY || '',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                text,
+                model_id: 'eleven_multilingual_v2',
+                voice_settings: { stability: 0.35, similarity_boost: 0.95, style: 0.0, use_speaker_boost: true }
+            })
         });
         if (!response.ok) {
-            console.warn('ElevenLabs via Edge Function falló, usando fallback de navegador.');
+            console.warn('ElevenLabs falló (probablemente bloqueado o sin API Key), usando fallback de navegador.');
             speakFallback(text, onEnd);
             return;
         }
@@ -271,20 +278,21 @@ export default function Sofia() {
     });
 
     // ── Timer de inactividad (30 segundos, se dispara UNA sola vez) ───────────
-    const idleFiredRef = useRef(false);
+    const idleFiredOnMsgId = useRef(null);
     useEffect(() => {
-        // Reiniciar el flag cuando el usuario envía un mensaje
+        // Si el usuario habla, repone el flag para el futuro.
         const lastMsg = messages[messages.length - 1];
-        if (lastMsg?.from === 'user') idleFiredRef.current = false;
+        if (lastMsg?.from === 'user') {
+            idleFiredOnMsgId.current = null;
+        }
     }, [messages]);
 
     useEffect(() => {
         let timer;
         const lastMsg = messages[messages.length - 1];
-        if (open && step === 'chat' && !isListening && !isSpeaking && lastMsg?.from === 'bot' && !idleFiredRef.current) {
+        if (open && step === 'chat' && !isListening && !isSpeaking && lastMsg?.from === 'bot' && idleFiredOnMsgId.current !== lastMsg.id) {
             timer = setTimeout(() => {
-                if (idleFiredRef.current) return; // evita doble disparo
-                idleFiredRef.current = true;
+                idleFiredOnMsgId.current = lastMsg.id; // Evita doble disparo sobre el mismo mensaje final
                 const idleText = '¿Sigues ahí? Para no perder más tiempo, dejame tu nombre y teléfono y un asesor te contacta a la brevedad.';
                 setMessages((prev) => [...prev, { id: Date.now(), from: 'bot', text: idleText }]);
                 setFormType('default');
