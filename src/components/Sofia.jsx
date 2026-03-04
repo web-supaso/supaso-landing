@@ -56,18 +56,25 @@ async function speak(rawText, onEnd) {
     }
 
     const text = toSpoken(rawText);
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID;
-
     try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/chat-tts`, {
+        const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+        // Llamada directa a ElevenLabs para evitar el bloqueo por IP del servidor proxy gratuito
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${anonKey}`,
+                'xi-api-key': 'sk_47d91ca66d259453ee86b118cc570e35c41c02c744648c0b',
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ text, voice_id: voiceId })
+            body: JSON.stringify({
+                text,
+                model_id: 'eleven_multilingual_v2',
+                voice_settings: {
+                    stability: 0.35,
+                    similarity_boost: 0.95,
+                    style: 0.0,
+                    use_speaker_boost: true
+                }
+            })
         });
 
         if (!response.ok) {
