@@ -45,63 +45,58 @@ function toSpoken(text) {
         .replace(/\bQR\b/g, "código Q R");
 }
 
-// ─── Síntesis de voz mediante Edge Function (ElevenLabs) ──────────────────────
+// ─── Síntesis de voz: ElevenLabs → fallback Web Speech API ──────────────────
 let currentAudio = null;
 
+function speakFallback(text, onEnd) {
+    if (!window.speechSynthesis) { if (onEnd) onEnd(); return; }
+    window.speechSynthesis.cancel();
+    const speech = new SpeechSynthesisUtterance(text);
+    speech.lang = 'es';
+    speech.rate = 1.0;
+    speech.pitch = 1.1;
+    // Priorizar voces femeninas en español
+    const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        const femNames = ['paulina', 'sabina', 'helena', 'monica', 'victoria', 'female', 'mujer', 'google español', 'google spanish'];
+        let v = voices.find(x => x.lang.startsWith('es') && femNames.some(n => x.name.toLowerCase().includes(n)));
+        if (!v) v = voices.find(x => x.lang === 'es-AR');
+        if (!v) v = voices.find(x => x.lang.startsWith('es'));
+        if (v) speech.voice = v;
+        if (onEnd) { speech.onend = onEnd; speech.onerror = onEnd; }
+        window.speechSynthesis.speak(speech);
+    };
+    if (window.speechSynthesis.getVoices().length > 0) loadVoices();
+    else window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+
 async function speak(rawText, onEnd) {
-    // Si ya hay alguien hablando, lo cortamos
-    if (currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
-    }
-
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     const text = toSpoken(rawText);
-    try {
-        const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
-        // Llamada directa a ElevenLabs para evitar el bloqueo por IP del servidor proxy gratuito
-        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-            method: 'POST',
-            headers: {
-                'xi-api-key': 'sk_47d91ca66d259453ee86b118cc570e35c41c02c744648c0b',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                text,
-                model_id: 'eleven_multilingual_v2',
-                voice_settings: {
-                    stability: 0.35,
-                    similarity_boost: 0.95,
-                    style: 0.0,
-                    use_speaker_boost: true
-                }
-            })
-        });
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
 
+    try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/chat-tts`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, voice_id: voiceId })
+        });
         if (!response.ok) {
-            const errText = await response.text();
-            console.error("Error en TTS Edge Function:", errText);
-            if (onEnd) onEnd();
+            console.warn('ElevenLabs via Edge Function falló, usando fallback de navegador.');
+            speakFallback(text, onEnd);
             return;
         }
-
         const blob = await response.blob();
         const audioUrl = URL.createObjectURL(blob);
         currentAudio = new Audio(audioUrl);
-
-        currentAudio.onended = () => {
-            URL.revokeObjectURL(audioUrl);
-            if (onEnd) onEnd();
-        };
-
-        currentAudio.onerror = () => {
-            URL.revokeObjectURL(audioUrl);
-            if (onEnd) onEnd();
-        };
-
+        currentAudio.onended = () => { URL.revokeObjectURL(audioUrl); if (onEnd) onEnd(); };
+        currentAudio.onerror = () => { URL.revokeObjectURL(audioUrl); speakFallback(text, onEnd); };
         await currentAudio.play();
     } catch (err) {
-        console.error("Error reproduciendo audio:", err);
-        if (onEnd) onEnd();
+        console.warn('Error de red en ElevenLabs, usando fallback de navegador:', err);
+        speakFallback(text, onEnd);
     }
 }
 
@@ -225,10 +220,8 @@ export default function Sofia() {
 
     // ── Detener síntesis al cerrar ────────────────────────────────────────────
     const handleClose = () => {
-        if (currentAudio) {
-            currentAudio.pause();
-            currentAudio = null;
-        }
+        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+        window.speechSynthesis?.cancel();
         setIsSpeaking(false);
         setOpen(false);
     };
@@ -254,17 +247,12 @@ export default function Sofia() {
     // ── Toggle síntesis manual ────────────────────────────────────────────────
     const toggleSpeak = () => {
         if (isSpeaking) {
-            if (currentAudio) {
-                currentAudio.pause();
-                currentAudio = null;
-            }
+            if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+            window.speechSynthesis?.cancel();
             setIsSpeaking(false);
         } else {
             const lastBot = [...messages].reverse().find((m) => m.from === "bot");
-            if (lastBot) {
-                setIsSpeaking(true);
-                speak(lastBot.text, handleSpeakEnd);
-            }
+            if (lastBot) { setIsSpeaking(true); speak(lastBot.text, handleSpeakEnd); }
         }
     };
 
@@ -282,19 +270,28 @@ export default function Sofia() {
         onError: (msg) => setSpeechError(msg),
     });
 
-    // ── Timer de inactividad (20 segundos) ───────────────────────────────────
+    // ── Timer de inactividad (30 segundos, se dispara UNA sola vez) ───────────
+    const idleFiredRef = useRef(false);
+    useEffect(() => {
+        // Reiniciar el flag cuando el usuario envía un mensaje
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg?.from === 'user') idleFiredRef.current = false;
+    }, [messages]);
+
     useEffect(() => {
         let timer;
         const lastMsg = messages[messages.length - 1];
-        if (open && step === "chat" && !isListening && !isSpeaking && lastMsg?.from === "bot") {
+        if (open && step === 'chat' && !isListening && !isSpeaking && lastMsg?.from === 'bot' && !idleFiredRef.current) {
             timer = setTimeout(() => {
-                const idleText = "¿Sigues ahí? Para no perder más tiempo y resolver tu consulta, por favor déjame tu nombre y teléfono.";
-                setMessages((prev) => [...prev, { id: Date.now(), from: "bot", text: idleText }]);
-                setFormType("default");
+                if (idleFiredRef.current) return; // evita doble disparo
+                idleFiredRef.current = true;
+                const idleText = '¿Sigues ahí? Para no perder más tiempo, dejame tu nombre y teléfono y un asesor te contacta a la brevedad.';
+                setMessages((prev) => [...prev, { id: Date.now(), from: 'bot', text: idleText }]);
+                setFormType('default');
                 setIsSpeaking(true);
                 speak(idleText, handleSpeakEnd);
-                setTimeout(() => setStep("form"), 1500);
-            }, 20000); // 20 segundos
+                setTimeout(() => setStep('form'), 1500);
+            }, 30000);
         }
         return () => clearTimeout(timer);
     }, [messages, step, isListening, isSpeaking, open, handleSpeakEnd]);
