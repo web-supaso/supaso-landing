@@ -75,23 +75,19 @@ async function speak(rawText, onEnd) {
     const text = toSpoken(rawText);
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
-
+    const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID || '9oPKasc15pfAbMr7N6Gs';
     try {
-        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        const response = await fetch(`${supabaseUrl}/functions/v1/chat-tts`, {
             method: 'POST',
             headers: {
-                'xi-api-key': import.meta.env.VITE_ELEVENLABS_API_KEY || '',
+                'Authorization': `Bearer ${anonKey}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                text,
-                model_id: 'eleven_multilingual_v2',
-                voice_settings: { stability: 0.35, similarity_boost: 0.95, style: 0.0, use_speaker_boost: true }
-            })
+            body: JSON.stringify({ text, voice_id: voiceId })
         });
         if (!response.ok) {
-            console.warn('ElevenLabs falló (probablemente bloqueado o sin API Key), usando fallback de navegador.');
+            const errText = await response.text();
+            console.warn('ElevenLabs via Edge Function falló, fallback al navegador. Error:', errText);
             speakFallback(text, onEnd);
             return;
         }
