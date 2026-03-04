@@ -45,61 +45,49 @@ function toSpoken(text) {
         .replace(/\bQR\b/g, "código Q R");
 }
 
-// ─── Síntesis de voz: ElevenLabs → fallback Web Speech API ──────────────────
-let currentAudio = null;
+// ─── Síntesis de voz (Web Speech API - Nativa y Gratuita) ─────────────────────
+function speak(rawText, onEnd) {
+    if (!window.speechSynthesis) {
+        if (onEnd) onEnd();
+        return;
+    }
 
-function speakFallback(text, onEnd) {
-    if (!window.speechSynthesis) { if (onEnd) onEnd(); return; }
+    // Cortar lo que esté hablando actualmente
     window.speechSynthesis.cancel();
+
+    const text = toSpoken(rawText);
     const speech = new SpeechSynthesisUtterance(text);
-    speech.lang = 'es';
+    speech.lang = "es-AR";
     speech.rate = 1.0;
-    speech.pitch = 1.1;
-    // Priorizar voces femeninas en español
+    speech.pitch = 1.0;
+
+    // Intentar buscar una voz femenina profesional
     const loadVoices = () => {
         const voices = window.speechSynthesis.getVoices();
-        const femNames = ['paulina', 'sabina', 'helena', 'monica', 'victoria', 'female', 'mujer', 'google español', 'google spanish'];
-        let v = voices.find(x => x.lang.startsWith('es') && femNames.some(n => x.name.toLowerCase().includes(n)));
-        if (!v) v = voices.find(x => x.lang === 'es-AR');
-        if (!v) v = voices.find(x => x.lang.startsWith('es'));
-        if (v) speech.voice = v;
-        if (onEnd) { speech.onend = onEnd; speech.onerror = onEnd; }
+        const preferredVoices = [
+            "Google español", "Paulina", "Sabina", "Helena", "Luciana", "Monica", "Microsoft Sabina"
+        ];
+
+        let voice = voices.find(v =>
+            v.lang.startsWith("es") && preferredVoices.some(p => v.name.includes(p))
+        );
+
+        if (!voice) voice = voices.find(v => v.lang.includes("es-AR"));
+        if (!voice) voice = voices.find(v => v.lang.startsWith("es"));
+
+        if (voice) speech.voice = voice;
+
+        if (onEnd) {
+            speech.onend = onEnd;
+            speech.onerror = onEnd;
+        }
         window.speechSynthesis.speak(speech);
     };
-    if (window.speechSynthesis.getVoices().length > 0) loadVoices();
-    else window.speechSynthesis.onvoiceschanged = loadVoices;
-}
 
-async function speak(rawText, onEnd) {
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-    const text = toSpoken(rawText);
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID || '9oPKasc15pfAbMr7N6Gs';
-    try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/chat-tts`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${anonKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ text, voice_id: voiceId })
-        });
-        if (!response.ok) {
-            const errText = await response.text();
-            console.warn('ElevenLabs via Edge Function falló, fallback al navegador. Error:', errText);
-            speakFallback(text, onEnd);
-            return;
-        }
-        const blob = await response.blob();
-        const audioUrl = URL.createObjectURL(blob);
-        currentAudio = new Audio(audioUrl);
-        currentAudio.onended = () => { URL.revokeObjectURL(audioUrl); if (onEnd) onEnd(); };
-        currentAudio.onerror = () => { URL.revokeObjectURL(audioUrl); speakFallback(text, onEnd); };
-        await currentAudio.play();
-    } catch (err) {
-        console.warn('Error de red en ElevenLabs, usando fallback de navegador:', err);
-        speakFallback(text, onEnd);
+    if (window.speechSynthesis.getVoices().length > 0) {
+        loadVoices();
+    } else {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
     }
 }
 
@@ -223,7 +211,6 @@ export default function Sofia() {
 
     // ── Detener síntesis al cerrar ────────────────────────────────────────────
     const handleClose = () => {
-        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
         window.speechSynthesis?.cancel();
         setIsSpeaking(false);
         setOpen(false);
@@ -250,7 +237,6 @@ export default function Sofia() {
     // ── Toggle síntesis manual ────────────────────────────────────────────────
     const toggleSpeak = () => {
         if (isSpeaking) {
-            if (currentAudio) { currentAudio.pause(); currentAudio = null; }
             window.speechSynthesis?.cancel();
             setIsSpeaking(false);
         } else {
@@ -273,29 +259,23 @@ export default function Sofia() {
         onError: (msg) => setSpeechError(msg),
     });
 
-    // ── Timer de inactividad (30 segundos, se dispara UNA sola vez) ───────────
-    const idleFiredOnMsgId = useRef(null);
-    useEffect(() => {
-        // Si el usuario habla, repone el flag para el futuro.
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg?.from === 'user') {
-            idleFiredOnMsgId.current = null;
-        }
-    }, [messages]);
-
+    // ── Timer de inactividad (45 segundos, evita bucles) ─────────────────────
     useEffect(() => {
         let timer;
         const lastMsg = messages[messages.length - 1];
-        if (open && step === 'chat' && !isListening && !isSpeaking && lastMsg?.from === 'bot' && idleFiredOnMsgId.current !== lastMsg.id) {
+
+        // Evitar bucle: no disparar si el último mensaje ya es de inactividad
+        const isIdlePrompt = lastMsg?.text?.includes("¿Sigues ahí?");
+
+        if (open && step === 'chat' && !isListening && !isSpeaking && lastMsg?.from === 'bot' && !isIdlePrompt) {
             timer = setTimeout(() => {
-                idleFiredOnMsgId.current = lastMsg.id; // Evita doble disparo sobre el mismo mensaje final
-                const idleText = '¿Sigues ahí? Para no perder más tiempo, dejame tu nombre y teléfono y un asesor te contacta a la brevedad.';
+                const idleText = "¿Sigues ahí? Por favor déjame tu nombre y teléfono para que un asesor te contacte personalmente.";
                 setMessages((prev) => [...prev, { id: Date.now(), from: 'bot', text: idleText }]);
                 setFormType('default');
                 setIsSpeaking(true);
                 speak(idleText, handleSpeakEnd);
-                setTimeout(() => setStep('form'), 1500);
-            }, 30000);
+                setTimeout(() => setStep("form"), 2000);
+            }, 45000); // 45 segundos
         }
         return () => clearTimeout(timer);
     }, [messages, step, isListening, isSpeaking, open, handleSpeakEnd]);

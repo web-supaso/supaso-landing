@@ -51,7 +51,7 @@ export async function askGemini(chatHistory, newText) {
             // Buscamos si alguna palabra clave de la base coincide con lo que tipeó el usuario
             const documentosRelevantes = knowledge.filter(doc => {
                 const keywords = doc.palabras_claves.split(",").map(k => k.trim().toLowerCase());
-                return keywords.some(k => userTextoLimpio.includes(k) && k.length > 3);
+                return keywords.some(k => userTextoLimpio.includes(k));
             });
 
             if (documentosRelevantes.length > 0) {
@@ -66,7 +66,7 @@ export async function askGemini(chatHistory, newText) {
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.0-flash",
             systemInstruction: currentSystemInstruction,
             generationConfig: {
                 temperature: 0.15, // Mantenerlo bajo 0.15 para que sea estricto con las leyes
