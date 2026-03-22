@@ -290,6 +290,7 @@ export default function Sofia() {
         if (e) e.preventDefault();
         const text = (autoText || inputText).trim();
         if (!text) return;
+        if (messages.some(m => m.id === "gemini_typing")) return;
 
         const userMsg = { id: Date.now(), from: "user", text };
         setMessages((prev) => [...prev, userMsg]);
@@ -324,7 +325,7 @@ export default function Sofia() {
                 setFormType("urgencia");
                 setIsSpeaking(true);
                 speak(botReply, handleSpeakEnd);
-                setTimeout(() => setStep("form"), 700);
+                setTimeout(() => setStep("form"), 1500); // Pequeña espera para que lea el mensaje
             } else if (
                 lower.includes("soy socio") ||
                 lower.includes("soy afiliado") ||
@@ -333,12 +334,12 @@ export default function Sofia() {
             ) {
                 // FLUJO C - Socio activo con problema
                 botReply =
-                    "Comprendo. Para que el Secretario General de tu provincia gestione este tema, indícame tu nombre completo, teléfono, provincia de residencia y provincia de trabajo.";
+                    "Comprendo. Para que el Secretario General de tu provincia gestione este tema, por favor indícame tu nombre completo, teléfono y provincia.";
                 setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
                 setFormType("socio");
                 setIsSpeaking(true);
                 speak(botReply, handleSpeakEnd);
-                setTimeout(() => setStep("form"), 700);
+                setTimeout(() => setStep("form"), 1500);
             } else if (
                 lower.includes("beneficio") ||
                 lower.includes("descuento")
@@ -356,12 +357,12 @@ export default function Sofia() {
             ) {
                 // Info - Costo de Cuota
                 botReply =
-                    "La cuota es del 2,5% del sueldo bruto para trabajadores en relación de dependencia. Para monotributistas o jubilados, varía según la categoría. Para asesorarte personalmente, indícame tu nombre y teléfono.";
+                    "La cuota es del 2,5% del sueldo bruto para trabajadores en relación de dependencia. Para asesorarte personalmente sobre tu categoría, por favor indícame tu nombre y teléfono.";
                 setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: botReply }]);
                 setFormType("default");
                 setIsSpeaking(true);
                 speak(botReply, handleSpeakEnd);
-                setTimeout(() => setStep("form"), 700);
+                setTimeout(() => setStep("form"), 2000);
             } else {
                 // FLUJO B - Inteligencia de Gemini
                 setMessages((prev) => [...prev, { id: "gemini_typing", from: "bot", text: "..." }]);
@@ -379,10 +380,12 @@ export default function Sofia() {
                     setMessages((prev) => prev.filter(m => m.id !== "gemini_typing"));
 
                     setMessages((prev) => [...prev, { id: Date.now() + 1, from: "bot", text: aiReply }]);
-                    if (wantsData) setFormType("default");
+                    if (wantsData) {
+                        setFormType("default");
+                        setTimeout(() => setStep("form"), 3000); // 3 segundos para que lea la respuesta de Gemini
+                    }
                     setIsSpeaking(true);
                     speak(aiReply, handleSpeakEnd);
-                    if (wantsData) setTimeout(() => setStep("form"), 1500);
 
                 } catch (err) {
                     console.error("Gemini failed", err);
@@ -392,7 +395,6 @@ export default function Sofia() {
                     setFormType("default");
                     setIsSpeaking(true);
                     speak(botReply, handleSpeakEnd);
-                    setTimeout(() => setStep("form"), 700);
                 }
             }
         }, 600);
@@ -400,15 +402,8 @@ export default function Sofia() {
 
     // ── Botón "Quiero afiliarme" (quick pick action) ────────────────────────
     const handleStartForm = () => {
-        const botText =
-            "Para afiliarte de forma online, haz clic en el botón 'Afiliarme' en la pantalla para completar tus datos. ¿Deseas conocer los beneficios legales o descuentos en salud mientras lo completas?";
-        setMessages((prev) => [
-            ...prev,
-            { id: Date.now(), from: "user", text: "Quiero afiliarme a SUPASO." },
-            { id: Date.now() + 1, from: "bot", text: botText },
-        ]);
-        setIsSpeaking(true);
-        speak(botText, handleSpeakEnd);
+        setStep("form");
+        setFormType("default");
     };
 
     // ── Submit Lead a Supabase ──────────────────────────────────────────────────
@@ -613,7 +608,7 @@ export default function Sofia() {
                                     className="w-full py-2.5 rounded-xl bg-primary text-white text-sm font-bold flex items-center justify-center gap-2 btn-magnetic"
                                 >
                                     <ChevronRight size={16} />
-                                    Quiero afiliarme
+                                    Contactar Asesor / Afiliarme
                                 </button>
                                 <a
                                     href="https://app-supaso.vercel.app"
@@ -649,8 +644,18 @@ export default function Sofia() {
                         {step === "form" && (
                             <form
                                 onSubmit={handleSubmit}
-                                className="mt-1 bg-white rounded-2xl p-4 border border-dark/10 shadow-sm flex flex-col gap-3 flex-shrink-0"
+                                className="mt-1 bg-white rounded-2xl p-4 border border-dark/5 flex flex-col gap-3"
                             >
+                                <div className="flex items-center justify-between mb-1">
+                                    <p className="font-bold text-dark text-sm">Dejá tus datos:</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setStep("chat")}
+                                        className="text-primary text-[11px] font-semibold hover:underline"
+                                    >
+                                        Volver al chat
+                                    </button>
+                                </div>
                                 <div className="flex flex-col gap-1 text-dark/70 text-xs">
                                     <label>Nombre y apellido</label>
                                     <input
