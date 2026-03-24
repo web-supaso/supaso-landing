@@ -159,7 +159,8 @@ export default function Sofia() {
     const [tooltipDismissed, setTooltipDismissed] = useState(false);
     const chatEndRef = useRef(null);
     const nombreRef = useRef(null);
-    const whatsappRef = useRef(null);
+    // ── Ref para evitar doble introducción (ej. StrictMode o re-renders rápidos) ─
+    const introLockRef = useRef(false);
 
     // ── Auto-scroll a último mensaje ──────────────────────────────────────────
     useEffect(() => {
@@ -199,12 +200,14 @@ export default function Sofia() {
 
     // ── Síntesis al primer open ───────────────────────────────────────────────
     useEffect(() => {
-        if (open && !hasSpoken) {
+        if (open && !hasSpoken && !introLockRef.current) {
+            introLockRef.current = true;
             setHasSpoken(true);
-            setTimeout(() => {
+            const timer = setTimeout(() => {
                 setIsSpeaking(true);
                 speak(getWelcomeText(), handleSpeakEnd);
             }, 600);
+            return () => clearTimeout(timer);
         }
     }, [open, hasSpoken, handleSpeakEnd]);
 
